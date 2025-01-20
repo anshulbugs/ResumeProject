@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Resume Downloader</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+        }
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .log-container {
+            max-height: 400px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #4f46e5 #ddd;
+        }
+        .log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .log-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .log-container::-webkit-scrollbar-thumb {
+            background: #4f46e5;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-3xl mx-auto">
+            <div class="text-center mb-8">
+                <h1 class="text-4xl font-bold text-gray-900 mb-2">PDF Resume Downloader</h1>
+                <p class="text-gray-600">Upload your CSV file and download PDFs in bulk</p>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <form id="uploadForm" class="space-y-4">
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Select CSV File</label>
+                        <input type="file" name="file" accept=".csv" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Download Directory</label>
+                        <input type="text" name="directory" required placeholder="Enter directory path"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+
+                    <button type="submit" id="submitButton"
+                        class="w-full gradient-bg text-white py-2 px-4 rounded-md hover:opacity-90 transition-opacity flex items-center justify-center space-x-2">
+                        <span>Download PDFs</span>
+                    </button>
+                </form>
+            </div>
+
+            <div id="progressContainer" class="hidden mb-6">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <div class="mb-4">
+                        <div class="flex justify-between text-sm text-gray-600 mb-1">
+                            <span>Download Progress</span>
+                            <span id="progressText">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="progressBar" class="gradient-bg h-2.5 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div id="loaderContainer" class="flex justify-center my-4">
+                        <span class="loader"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="logsContainer" class="hidden">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Download Logs</h2>
+                    <div id="logs" class="log-container space-y-2 text-sm text-gray-600"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const submitButton = document.getElementById('submitButton');
+        const logs = document.getElementById('logs');
+        const progressContainer = document.getElementById('progressContainer');
+        const logsContainer = document.getElementById('logsContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const loaderContainer = document.getElementById('loaderContainer');
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            // Reset and show containers
+            logs.innerHTML = '';
+            progressBar.style.width = '0%';
+            progressText.textContent = '0%';
+            progressContainer.classList.remove('hidden');
+            logsContainer.classList.remove('hidden');
+            
+            // Disable submit button
+            submitButton.disabled = true;
+            submitButton.classList.add('opacity-50');
+            
+            try {
+                // Send POST request with form data
+                const formData = new FormData(form);
+                const response = await fetch('/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Set up event source to receive progress updates
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const {value, done} = await reader.read();
+                    if (done) break;
+                    
+                    const text = decoder.decode(value);
+                    const events = text.split('\n\n');
+                    
+                    for (const event of events) {
+                        if (!event.trim()) continue;
+                        
+                        const data = event.replace('data: ', '');
+                        
+                        if (data === 'COMPLETE') {
+                            loaderContainer.classList.add('hidden');
+                            submitButton.disabled = false;
+                            submitButton.classList.remove('opacity-50');
+                            break;
+                        }
+                        
+                        if (data.startsWith('PROGRESS:')) {
+                            const progress = parseFloat(data.split(':')[1]);
+                            progressBar.style.width = `${progress}%`;
+                            progressText.textContent = `${Math.round(progress)}%`;
+                            continue;
+                        }
+                        
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'py-1';
+                        
+                        if (data.includes('❌')) {
+                            logEntry.className += ' text-red-500';
+                        } else if (data.includes('✅')) {
+                            logEntry.className += ' text-green-500';
+                        } else if (data.includes('⚠️')) {
+                            logEntry.className += ' text-yellow-500';
+                        }
+                        
+                        logEntry.textContent = data;
+                        logs.appendChild(logEntry);
+                        logs.scrollTop = logs.scrollHeight;
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                const logEntry = document.createElement('div');
+                logEntry.className = 'py-1 text-red-500';
+                logEntry.textContent = `Error: ${error.message}`;
+                logs.appendChild(logEntry);
+                loaderContainer.classList.add('hidden');
+                submitButton.disabled = false;
+                submitButton.classList.remove('opacity-50');
+            }
+        });
+    </script>
+</body>
+</html>
