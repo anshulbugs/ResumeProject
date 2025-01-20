@@ -84,7 +84,6 @@ Download Directory: {directory}"""
         # Clean up the temporary file
         if os.path.exists(filepath):
             os.remove(filepath)
-            os.remove(UPLOAD_FOLDER)
 
 
 @app.route('/', methods=['GET', 'POST'])
